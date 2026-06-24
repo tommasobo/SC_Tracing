@@ -88,3 +88,37 @@ safe on this local WSL machine and avoids expensive trace regeneration,
   Result: clean.
 - Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --pipeline --only 3` after output-flush and demo-message changes.
   Result: succeeded; runtime 3.98 s after LogGOPSim was already built; max RSS 134764 KiB. Console output is now ordered correctly.
+
+## 2026-06-24 Second Pass - Tests, Tier C Safety, And Merge Readiness
+
+- Command: `git show --stat --oneline --summary HEAD`.
+  Result: audited first-pass commit `61ab912`; additions were source/docs plus NPKIT JSON inputs. No generated figures, logs, nsys/sqlite files, Gurobi license, built binaries, or Python bytecode were tracked.
+- Command: `git diff origin/main...HEAD -- . ':!data/npkit/*.json' ':!tools/nccl_generator/*' | rg ...`.
+  Result: absolute paths found only in local progress/reconciliation docs, intentionally documenting local machine state.
+- Added `pytest.ini` and `tests/test_artifact_smoke.py`.
+  Result: default `python3 -m pytest -q` now tests the artifact smoke path rather than collecting stale historical `solver/test` tests.
+- Added `solver/test/README.md`.
+  Result: explains why historical solver tests are not the default artifact test path.
+- Added `scripts/check_artifact.py`.
+  Result: local-safe check script covering packaged inputs, default imports, help surfaces, Tier C dry-run, compile checks, one optional figure, and optional pipeline demo.
+- Hardened Tier C scripts:
+  - `pipeline/reproduce_fig5_from_nsys.sh --dry-run` prints plan/dependency status and exits without downloads or generation.
+  - `pipeline/reproduce_fig5_from_nsys.sh` stops before Monolithic-LP unless `--run-lp` is passed.
+  - `pipeline/run_monolithic_lp.py --dry-run` prints the solver command without launching Gurobi.
+  - `pipeline/run_nccl_generator.py --dry-run` validates sqlite/NPKIT inputs and prints the generator command.
+- Command: `python3 scripts/check_artifact.py --skip-figure`.
+  Result: succeeded. It reported `nsys` as missing in Tier C dry-run, without failing.
+- Command: `python3 -m pytest -q`.
+  Result: succeeded, `5 passed`.
+- Command: `git diff --check`.
+  Result: clean.
+- Command: `python3 reproduce_all.py --list`.
+  Result: succeeded.
+- Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --pipeline --only 3`.
+  Result: succeeded; runtime 4.40 s; max RSS 134868 KiB.
+- Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 -m compileall -q pipeline tools/nccl_generator solver/llamp_nccl`.
+  Result: succeeded; runtime 0.02 s; max RSS 11064 KiB.
+- Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 -m pytest -q`.
+  Result: succeeded; `5 passed`; runtime 2.43 s; max RSS 82728 KiB.
+- Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 scripts/check_artifact.py`.
+  Result: succeeded; included Tier C dry-run and one packaged Fig. 7 regeneration; runtime 2.10 s; max RSS 82476 KiB.

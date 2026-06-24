@@ -52,6 +52,30 @@ This file summarizes what was found during the local lightweight pass on
   write persistent output files.
 - Added small output flushing in `reproduce_all.py` and `pipeline/demo.py` so
   parent progress messages appear before child process output.
+- Added root-level artifact smoke tests under `tests/` and `pytest.ini`, so
+  `python3 -m pytest -q` now validates the artifact path instead of collecting
+  stale historical solver tests by default.
+- Added `scripts/check_artifact.py` for local-safe syntax/help/import/data
+  checks, with optional single-figure and pipeline-demo checks.
+- Hardened Tier C:
+  - `pipeline/reproduce_fig5_from_nsys.sh --dry-run` reports the plan and
+    dependency status without downloading or generating files.
+  - The script stops before the expensive Monolithic-LP step unless `--run-lp`
+    is passed.
+  - `pipeline/run_monolithic_lp.py` and `pipeline/run_nccl_generator.py` now
+    support `--dry-run`.
+- Documented `solver/test/` as legacy historical tests, not the default
+  artifact test path.
+
+## First-Pass Audit Result
+
+- No newly tracked generated figures, logs, SQLite files, nsys captures,
+  Gurobi license files, built LogGOPSim binaries, or Python bytecode were
+  found.
+- The large NPKIT JSON files are intentional Tier C inputs ported from local
+  `artifact_sc26`.
+- Absolute local paths appear only in the local progress/reconciliation docs
+  and are intentional merge context.
 - Extended `.gitignore` for Tier C outputs and regenerated CSV sidecars.
 
 ## Lightweight Reproduction Results
@@ -69,26 +93,72 @@ This file summarizes what was found during the local lightweight pass on
   - `python3 pipeline/run_nccl_generator.py --help`
   - `bash -n pipeline/reproduce_fig5_from_nsys.sh`
   - `python3 -m compileall -q pipeline tools/nccl_generator solver/llamp_nccl`
+- Second-pass checks:
+  - `python3 scripts/check_artifact.py --skip-figure`: succeeded.
+  - `python3 -m pytest -q`: succeeded, 5 passed.
+  - `git diff --check`: succeeded.
+  - `python3 reproduce_all.py --list`: succeeded.
+  - `python3 reproduce_all.py --pipeline --only 3`: succeeded in 4.40 s,
+    max RSS 134868 KiB.
+  - `python3 -m compileall -q pipeline tools/nccl_generator solver/llamp_nccl`:
+    succeeded in 0.02 s, max RSS 11064 KiB.
+  - `python3 scripts/check_artifact.py`: succeeded in 2.10 s, max RSS
+    82476 KiB, including one packaged Fig. 7 regeneration.
 
 ## Tests And Known Gaps
 
-- `python3 -m pytest solver/test`: failed during collection because tests
-  expect `solver/` on `PYTHONPATH`.
-- `PYTHONPATH=solver python3 -m pytest solver/test`: collected 7 tests; 1
-  passed and 6 failed. The failures appear to be stale unit tests and missing
-  historical test-data paths, not failures in the packaged figure path.
+- `solver/test/` remains as legacy historical tests and is not collected by
+  default. Earlier direct runs failed due to missing historical test data and
+  stale graph assumptions.
 - Tier C was not run locally. It requires Nsight/Gurobi and can become
-  expensive; it should be exercised selectively or on the high-RAM machine.
+  expensive; the local branch validates dry-run/help/syntax/import surfaces.
 - No 4,096-GPU, monolithic-LP-at-scale, LGS-at-scale, retracing, or full trace
   downloads were attempted.
 
 ## Likely Merge Points
 
-- Merge the README/tier clarification and optional Tier C wrappers if the
-  high-RAM branch has not already added them.
-- Check whether high-RAM `clean_version` has a newer `tools/nccl_generator/`
-  before taking the local copy wholesale.
+- Safe to merge immediately if not already present:
+  - README tier clarification.
+  - `pytest.ini`, `tests/test_artifact_smoke.py`, and `scripts/check_artifact.py`.
+  - Tier C safety flags and clearer dry-run behavior.
+- Needs manual review against high-RAM `clean_version`:
+  - `tools/nccl_generator/`
+  - `data/npkit/*.json`
+  - Tier C wrapper defaults, especially whether high-RAM has newer trace paths.
 - Reconcile `pipeline/run_lgs.py` with the local `artifact_sc26` variant if
   intra-node LGS parameters are still needed in the final artifact.
-- Decide whether stale `solver/test` unit tests should be repaired, removed,
-  or replaced with a small smoke-test script.
+- Do not merge local-only/generated material from the development tree:
+  - built LogGOPSim binaries,
+  - generated figures,
+  - `tier_c_fig5/`,
+  - raw nsys/sqlite outputs,
+  - dirty workspaces under `/home/tbonato/LLAMP_Test/workspaces/`.
+
+## Reconciliation Commands
+
+Useful commands before merging with the high-RAM branch:
+
+```bash
+git fetch origin
+git log --oneline --graph --decorate --all --max-count=30
+git diff --stat origin/main...clean_version_local
+git diff --name-status origin/main...clean_version_local
+```
+
+If a remote `clean_version` branch becomes visible:
+
+```bash
+git fetch origin clean_version
+git diff --stat origin/clean_version...clean_version_local
+git diff --name-status origin/clean_version...clean_version_local
+git log --oneline --graph --decorate origin/clean_version clean_version_local --max-count=40
+```
+
+After any merge, rerun:
+
+```bash
+python3 -m pytest -q
+python3 scripts/check_artifact.py --skip-figure
+python3 reproduce_all.py --list
+python3 reproduce_all.py --pipeline --only 3
+```

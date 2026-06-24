@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
-# End-to-end reproduction of paper Figure 5 starting from raw nsys captures.
+# Optional reproduction of paper Figure 5 starting from raw nsys captures.
 #
 # Stages:
 #   1. Download 4 nsys-rep files for Llama 3.3 @ 16 GPUs from A2.
 #   2. nsys export --type=sqlite   (needs NVIDIA Nsight Systems)
 #   3. tools/nccl_generator        (SQLite -> output.goal + comm_dep)
-#   4. solver/main.py              (GOAL -> composed_runtime.csv, Gurobi)
+#   4. solver/main.py              (GOAL -> full_runtime.csv, Gurobi)
 #   5. scripts/fig05_llama_iteration.py  (CSV -> fig5_llama7b.pdf)
 #   6. Diff regenerated CSV and PDF against the shipped artifact output.
 #
-# Requires: nsys >= 2024.x on PATH, Python 3.8+, Gurobi 10.0+, wget.
+# Requires: nsys >= 2024.x on PATH, Python 3.8+, wget. The LP step also
+# requires Gurobi and is disabled unless --run-lp is passed.
 #
-# Expected wall time: ~15–20 min (dominated by LP solve).
+# Local-safe checks:
+#   pipeline/reproduce_fig5_from_nsys.sh --dry-run
+#   pipeline/reproduce_fig5_from_nsys.sh --skip-download --work tier_c_fig5
+#
+# Full optional run:
+#   pipeline/reproduce_fig5_from_nsys.sh --run-lp
 
 set -euo pipefail
 
@@ -20,19 +26,167 @@ ROOT="$(cd "$HERE/.." && pwd)"
 
 WORK="${WORK:-$ROOT/tier_c_fig5}"
 A2_NSYS="${A2_NSYS:-http://storage2.spcl.ethz.ch/traces/ai/llama3_3_n4/nsys/}"
+RUN_LP=0
+DRY_RUN=0
+SKIP_DOWNLOAD=0
+
+usage() {
+    cat <<EOF
+Usage: $0 [options]
+
+Options:
+  --dry-run          Print planned commands and dependency status, then exit.
+  --run-lp           Run the expensive Monolithic-LP sweep. Without this flag,
+                     the script stops after GOAL generation.
+  --skip-download    Use existing files under WORK/nsys instead of running wget.
+  --work DIR         Working directory (default: \$WORK or $ROOT/tier_c_fig5).
+  --a2-nsys URL      A2 nsys URL (default: $A2_NSYS).
+  -h, --help         Show this help.
+
+This script is intentionally not part of the default local reproduction path.
+It downloads only the selected Fig. 5 nsys subtree, never the full A2 archive,
+and requires --run-lp before launching the expensive Gurobi LP stage.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dry-run)
+            DRY_RUN=1
+            ;;
+        --run-lp)
+            RUN_LP=1
+            ;;
+        --skip-download)
+            SKIP_DOWNLOAD=1
+            ;;
+        --work)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "error: --work requires a directory argument" >&2
+                exit 2
+            fi
+            WORK="$1"
+            ;;
+        --a2-nsys)
+            shift
+            if [ "$#" -eq 0 ]; then
+                echo "error: --a2-nsys requires a URL argument" >&2
+                exit 2
+            fi
+            A2_NSYS="$1"
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "error: unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+require_cmd() {
+    local name="$1"
+    local why="$2"
+    if ! command -v "$name" >/dev/null 2>&1; then
+        echo "error: '$name' is required for $why" >&2
+        exit 3
+    fi
+}
+
+check_python_module() {
+    local module="$1"
+    python3 - "$module" <<'PY'
+import importlib.util
+import sys
+mod = sys.argv[1]
+sys.exit(0 if importlib.util.find_spec(mod) else 1)
+PY
+}
+
+print_plan() {
+    cat <<EOF
+Tier C plan:
+  work directory : $WORK
+  A2 nsys URL    : $A2_NSYS
+  skip download  : $SKIP_DOWNLOAD
+  run LP         : $RUN_LP
+
+Steps:
+  1. Download selected Fig. 5 .nsys-rep files unless --skip-download is set.
+  2. Export .nsys-rep files to sqlite with nsys.
+  3. Run tools/nccl_generator through pipeline/run_nccl_generator.py.
+  4. Stop unless --run-lp is set.
+  5. If --run-lp is set, run the expensive Gurobi monolithic LP sweep.
+EOF
+}
+
+print_plan
+
+if [ "$DRY_RUN" -eq 1 ]; then
+    echo
+    echo "Dependency status:"
+    for cmd in python3 wget nsys; do
+        if command -v "$cmd" >/dev/null 2>&1; then
+            echo "  [ok]      $cmd"
+        else
+            echo "  [missing] $cmd"
+        fi
+    done
+    for module in pandas numba tqdm gurobipy; do
+        if check_python_module "$module"; then
+            echo "  [ok]      python:$module"
+        else
+            echo "  [missing] python:$module"
+        fi
+    done
+    echo
+    echo "Dry run complete. No dependency is required for --dry-run, and no files were downloaded or generated."
+    exit 0
+fi
+
+require_cmd python3 "Tier C Python wrappers"
+if [ "$SKIP_DOWNLOAD" -eq 0 ]; then
+    require_cmd wget "downloading selected Fig. 5 nsys files"
+fi
+require_cmd nsys "exporting nsys-rep files to sqlite"
+
+for module in pandas numba tqdm; do
+    if ! check_python_module "$module"; then
+        echo "error: Python module '$module' is required. Run: pip install -r requirements-tierc.txt" >&2
+        exit 3
+    fi
+done
+
+if [ "$RUN_LP" -eq 1 ] && ! check_python_module gurobipy; then
+    echo "error: gurobipy is required for --run-lp. Install/configure Gurobi first." >&2
+    exit 3
+fi
 
 mkdir -p "$WORK"/{nsys,sqlite,analysis,out}
 
-echo "=== [1/6] Download nsys-rep from A2 ($A2_NSYS) ==="
-wget -nc -r -np -nH --cut-dirs=4 -P "$WORK/nsys" "$A2_NSYS" || true
-ls "$WORK/nsys"
-
-echo "=== [2/6] nsys export --type=sqlite ==="
-if ! command -v nsys >/dev/null 2>&1; then
-    echo "error: nsys not found on PATH. Install NVIDIA Nsight Systems first." >&2
-    exit 3
+echo "=== [1/5] Prepare nsys-rep files ==="
+if [ "$SKIP_DOWNLOAD" -eq 0 ]; then
+    wget -nc -r -np -nH --cut-dirs=4 -A '*.nsys-rep' -P "$WORK/nsys" "$A2_NSYS"
+else
+    echo "  [skip] --skip-download set; using existing files under $WORK/nsys"
 fi
-for rep in "$WORK/nsys"/*.nsys-rep; do
+
+shopt -s nullglob
+reps=("$WORK/nsys"/*.nsys-rep)
+if [ "${#reps[@]}" -eq 0 ]; then
+    echo "error: no .nsys-rep files found under $WORK/nsys" >&2
+    echo "       remove --skip-download or set --work to a directory with nsys files." >&2
+    exit 4
+fi
+printf '  %s\n' "${reps[@]}"
+
+echo "=== [2/5] nsys export --type=sqlite ==="
+for rep in "${reps[@]}"; do
     sqlite="$WORK/sqlite/$(basename "${rep%.nsys-rep}.sqlite")"
     if [ -f "$sqlite" ]; then
         echo "  [skip] $sqlite exists"
@@ -41,24 +195,30 @@ for rep in "$WORK/nsys"/*.nsys-rep; do
     nsys export --type=sqlite -o "$sqlite" "$rep"
 done
 
-echo "=== [3/6] SQLite -> GOAL via nccl_generator ==="
+echo "=== [3/5] SQLite -> GOAL via nccl_generator ==="
 python3 "$HERE/run_nccl_generator.py" \
     --sqlite-dir "$WORK/sqlite" \
     --out-dir    "$WORK/analysis"
 
-echo "=== [4/6] GOAL -> Monolithic-LP sweep (paper Fig 5 baseline, ~83 min) ==="
+if [ "$RUN_LP" -eq 0 ]; then
+    echo
+    echo "Tier C stopped before the expensive Monolithic-LP step."
+    echo "To continue with Gurobi, rerun with --run-lp."
+    exit 0
+fi
+
+echo "=== [4/5] GOAL -> Monolithic-LP sweep (paper Fig 5 baseline, can take tens of minutes) ==="
 python3 "$HERE/run_monolithic_lp.py" \
     --goal  "$WORK/analysis/output.goal" \
     --out   "$WORK/out/full_runtime.csv" \
     --l-min 0 --l-max 1000000 --step 50000
 
-echo "=== [5/6] CSV staged next to the shipped Fig 5 CSV ==="
+echo "=== [5/5] Compare regenerated vs shipped (Monolithic LP baseline) ==="
 cp "$WORK/out/full_runtime.csv" \
    "$ROOT/data/output/llama7b/partial_100pct/sweeps/full_runtime.csv.regenerated"
 echo "  regenerated CSV saved to:"
 echo "    $ROOT/data/output/llama7b/partial_100pct/sweeps/full_runtime.csv.regenerated"
 
-echo "=== [6/6] Compare regenerated vs shipped (Monolithic LP baseline) ==="
 SHIPPED="$ROOT/data/output/llama7b/partial_100pct/sweeps/full_runtime.csv"
 MY="$WORK/out/full_runtime.csv"
 
@@ -85,7 +245,4 @@ PY
 echo
 echo "Tier C end-to-end reproduction complete."
 echo "Regenerated CSV: $MY"
-echo "To render Fig 5 from the regenerated CSV:"
-echo "  cp $MY \\"
-echo "     $ROOT/data/output/llama7b/comp_100pct/sweeps/composed_runtime.csv"
-echo "  python3 $ROOT/reproduce_all.py --only 5"
+echo "The shipped figure path remains unchanged. Inspect the regenerated CSV before replacing packaged data."

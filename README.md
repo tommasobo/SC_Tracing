@@ -11,11 +11,11 @@ pipeline used to derive them from raw execution traces.
 |------|---------|--------------------|------------|---------|
 | A | `python3 reproduce_all.py` | none beyond `requirements.txt` | ~1 min, <250 MiB RSS | Regenerate all figures from packaged CSVs |
 | B | `python3 reproduce_all.py --pipeline` | `g++ gengetopt re2c` | +~30 s | Build LogGOPSim and replay the tiny demo GOAL |
-| C | `pipeline/reproduce_fig5_from_nsys.sh` | Nsight Systems, Gurobi, optional Python deps | minutes to hours, much larger memory | Regenerate the smallest paper pipeline from raw nsys |
+| C | `pipeline/reproduce_fig5_from_nsys.sh --dry-run` | Nsight Systems, optional Python deps; Gurobi only with `--run-lp` | dry-run is laptop-safe; full run is heavier | Inspect or run the smallest raw-nsys pipeline |
 
 Tier A is the recommended default for local machines. Tier C is included
-as a documented path, but it should be treated as optional and should not
-be confused with the expensive production-scale validation runs.
+as optional deeper tooling. It is separate from high-RAM production-scale
+data reproduction.
 
 ## Figures only, Tier A
 
@@ -44,6 +44,22 @@ python3 reproduce_all.py --pipeline
 The default demo runs only LogGOPSim. It does not require Gurobi and
 does not write persistent runtime CSVs. LP wrappers are provided for
 users who have Gurobi and want to run small custom experiments.
+
+## Local checks
+
+Use these checks before committing or after merging artifact changes:
+
+```bash
+python3 -m pytest -q
+python3 scripts/check_artifact.py --skip-figure
+python3 scripts/check_artifact.py              # includes one packaged figure
+python3 scripts/check_artifact.py --pipeline   # also runs the tiny LGS demo
+```
+
+The default pytest path intentionally uses root-level artifact smoke tests.
+Historical tests under `solver/test/` are preserved for reference but are
+not collected by default because they depend on old unshipped test data and
+outdated graph assumptions.
 
 ## Pipeline stages
 
@@ -167,16 +183,41 @@ python3 pipeline/run_lgs.py \
 ```
 
 To regenerate the smallest paper pipeline from raw nsys captures, install
-the optional generator dependencies and run Tier C:
+the optional generator dependencies and start with a dry run:
 
 ```bash
 pip install -r requirements-tierc.txt
+pipeline/reproduce_fig5_from_nsys.sh --dry-run
+```
+
+To run the nsys export and GOAL generation stages on the selected Fig. 5
+workload:
+
+```bash
 pipeline/reproduce_fig5_from_nsys.sh
+```
+
+The script stops before the expensive Monolithic-LP stage unless explicitly
+requested:
+
+```bash
+pipeline/reproduce_fig5_from_nsys.sh --run-lp
 ```
 
 This path downloads only the selected Fig. 5 workload. It intentionally
 does not download the full trace archive and does not run the 4,096-GPU
 cases.
+
+## High-RAM-only reproduction
+
+The following are intentionally outside the local artifact path and should
+be run only on the high-RAM cleanup branch/machine:
+
+- 4,096-GPU Monolithic-LP experiments.
+- 4,096-GPU LogGOPSim/LGS replays.
+- Full trace dataset downloads.
+- Raw retracing or recollecting GOAL traces.
+- Any job expected to require tens of GiB to TiB of memory.
 
 ## System requirements
 

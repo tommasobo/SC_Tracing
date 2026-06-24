@@ -55,6 +55,9 @@ def main() -> int:
                     help="LogGP overhead parameter, ns (default: 200)")
     ap.add_argument("--G", type=float, default=0.018,
                     help="LogGP bandwidth parameter, ns/byte (default: 0.018)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Validate arguments and print the solver command "
+                         "without launching Gurobi.")
     args = ap.parse_args()
 
     args.goal = args.goal.resolve()
@@ -82,12 +85,15 @@ def main() -> int:
     ]
     if args.comm_dep is not None:
         cmd += ["-c", str(args.comm_dep)]
-    print("[composite-lp]", " ".join(cmd))
+    print("[monolithic-lp]", " ".join(cmd))
+    if args.dry_run:
+        print("[monolithic-lp] dry run complete; solver was not launched.")
+        return 0
     t0 = time.perf_counter()
     r = subprocess.run(cmd, cwd=SOLVER)
     dt = time.perf_counter() - t0
     if r.returncode != 0:
-        print(f"[composite-lp] FAILED after {dt:.1f}s", file=sys.stderr)
+        print(f"[monolithic-lp] FAILED after {dt:.1f}s", file=sys.stderr)
         return r.returncode
 
     # The sensitivity action writes a fixed runtime filename.
@@ -97,7 +103,7 @@ def main() -> int:
         if produced.exists() and produced.resolve() != args.out.resolve():
             produced.replace(args.out)
             break
-    print(f"[composite-lp] wrote {args.out} ({dt:.1f}s)")
+    print(f"[monolithic-lp] wrote {args.out} ({dt:.1f}s)")
     return 0
 
 

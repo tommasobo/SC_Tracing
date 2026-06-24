@@ -41,12 +41,19 @@ def main() -> int:
     ap.add_argument("--parallel", action="store_true", default=False,
                     help="Use the Dask-backed parallel event extractor "
                          "(experimental; may not apply tolerant_gpu_match).")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Validate inputs and print the generator command "
+                         "without running it.")
     args = ap.parse_args()
 
     for p in (args.sqlite_dir, args.npkit_simple, args.npkit_ll):
         if not p.exists():
             print(f"error: {p} not found", file=sys.stderr)
             return 2
+    sqlite_files = sorted(args.sqlite_dir.glob("*.sqlite"))
+    if not sqlite_files:
+        print(f"error: no *.sqlite files found in {args.sqlite_dir}", file=sys.stderr)
+        return 2
     args.out_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
@@ -60,6 +67,9 @@ def main() -> int:
     if args.parallel:
         cmd += ["-p"]
     print(">>>", " ".join(cmd))
+    if args.dry_run:
+        print(f"[nccl_generator] dry run complete; found {len(sqlite_files)} sqlite file(s).")
+        return 0
     t0 = time.perf_counter()
     r = subprocess.run(cmd, cwd=GENERATOR)
     dt = time.perf_counter() - t0
