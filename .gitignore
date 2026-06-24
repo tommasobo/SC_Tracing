@@ -18,6 +18,8 @@ figures/
 
 # Pipeline intermediate output
 data/demo_output/
+tier_c_fig5/
+*.regenerated
 
 # Built LogGOPSim binaries
 tools/LogGOPSim/LogGOPSim

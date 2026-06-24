@@ -82,7 +82,7 @@ def main() -> int:
         return 0
 
     if args.pipeline:
-        print("=== Pipeline demo (LogGOPSim on shipped demo GOAL) ===")
+        print("=== Pipeline demo (LogGOPSim on shipped demo GOAL) ===", flush=True)
         pipe = HERE / "pipeline" / "demo.py"
         r = subprocess.run([sys.executable, str(pipe)])
         if r.returncode != 0:
@@ -98,7 +98,7 @@ def main() -> int:
         if script in seen_scripts:
             continue  # multi-figure scripts run once
         seen_scripts.add(script)
-        print(f"[Fig {num}] {script}")
+        print(f"[Fig {num}] {script}", flush=True)
         dt = run_script(script)
         total_t += dt
         for out in outs:

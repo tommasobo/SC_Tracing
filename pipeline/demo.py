@@ -24,7 +24,7 @@ DEFAULT_OUT = ROOT / "data" / "demo_output"
 
 
 def run(cmd):
-    print(">>>", " ".join(str(c) for c in cmd))
+    print(">>>", " ".join(str(c) for c in cmd), flush=True)
     r = subprocess.run(cmd)
     if r.returncode != 0:
         raise SystemExit(r.returncode)
@@ -48,9 +48,7 @@ def main() -> int:
         print(f"error: {args.goal} not found", file=sys.stderr)
         return 2
 
-    args.out_dir.mkdir(parents=True, exist_ok=True)
-
-    print("\n=== LogGOPSim replay (builds and runs LogGOPSim on the demo GOAL) ===")
+    print("\n=== LogGOPSim replay (builds and runs LogGOPSim on the demo GOAL) ===", flush=True)
     for L in (0, 1_000, 10_000, 100_000):
         run([
             sys.executable, str(HERE / "run_lgs.py"),
@@ -59,15 +57,18 @@ def main() -> int:
         ])
 
     if args.with_lp:
-        print("\n=== Composite-LP sweep ===")
+        args.out_dir.mkdir(parents=True, exist_ok=True)
+        print("\n=== Composite-LP sweep ===", flush=True)
         run([
             sys.executable, str(HERE / "run_composite_lp.py"),
             "--goal", str(args.goal),
             "--out", str(args.out_dir / "composed_runtime.csv"),
             "--l-min", "0", "--l-max", "1000000", "--step", "100000",
         ])
+        print(f"\nDemo complete. Outputs in {args.out_dir.relative_to(ROOT)}/")
+    else:
+        print("\nDemo complete. The default LGS-only path writes no persistent outputs.")
 
-    print(f"\nDemo complete. Outputs in {args.out_dir.relative_to(ROOT)}/")
     return 0
 
 

@@ -5,7 +5,19 @@ This artifact reproduces the figures of the paper
 Performance Sensitivity at Unprecedented Scale"* and provides the full
 pipeline used to derive them from raw execution traces.
 
-## End-to-end reproduction (figures only, ~1 minute)
+## Reproduction tiers
+
+| Tier | Command | Extra requirements | Local cost | Purpose |
+|------|---------|--------------------|------------|---------|
+| A | `python3 reproduce_all.py` | none beyond `requirements.txt` | ~1 min, <250 MiB RSS | Regenerate all figures from packaged CSVs |
+| B | `python3 reproduce_all.py --pipeline` | `g++ gengetopt re2c` | +~30 s | Build LogGOPSim and replay the tiny demo GOAL |
+| C | `pipeline/reproduce_fig5_from_nsys.sh` | Nsight Systems, Gurobi, optional Python deps | minutes to hours, much larger memory | Regenerate the smallest paper pipeline from raw nsys |
+
+Tier A is the recommended default for local machines. Tier C is included
+as a documented path, but it should be treated as optional and should not
+be confused with the expensive production-scale validation runs.
+
+## Figures only, Tier A
 
 Four commands, no GPU, no special hardware:
 
@@ -18,7 +30,7 @@ python3 reproduce_all.py
 
 Generated PDFs and PNGs appear under `figures/`.
 
-## End-to-end reproduction (figures + pipeline demo, ~2 minutes)
+## Figures plus tiny pipeline demo, Tier B
 
 Same three commands plus `--pipeline`, which builds LogGOPSim from
 source and replays a small demo GOAL trace through the LGS stage
@@ -28,6 +40,10 @@ before running the figure scripts:
 apt-get install g++ gengetopt re2c          # build deps for LogGOPSim
 python3 reproduce_all.py --pipeline
 ```
+
+The default demo runs only LogGOPSim. It does not require Gurobi and
+does not write persistent runtime CSVs. LP wrappers are provided for
+users who have Gurobi and want to run small custom experiments.
 
 ## Pipeline stages
 
@@ -53,6 +69,11 @@ the expensive ones:
 | 3c. Monolithic LP | Single full-trace LP (paper baseline for Figs 5, 7) | `solver/` (`main.py -a sensitivity --skip-composition`) | Only at small scales — at 4,096 GPUs it requires tens of TB of RAM and we ship the results |
 | 4. Plotting | Figure generation from the sensitivity CSVs | `scripts/fig*.py`, `reproduce_all.py` | Yes (default path, ~1 min) |
 
+The raw-trace-to-GOAL tooling is shipped under `tools/nccl_generator/`
+with thin wrappers in `pipeline/`. It is useful for reproducing small
+workloads from already-downloaded nsys SQLite files, but it is not part
+of the default local path.
+
 ## Layout
 
 ```
@@ -63,11 +84,15 @@ the expensive ones:
 ├── scripts/                  # figure generators (one per paper figure)
 ├── solver/                   # Composite-LP and Monolithic-LP solver (Python)
 ├── tools/LogGOPSim/          # LogGOPSim source + Makefile (build with pipeline/build_tools.sh)
+├── tools/nccl_generator/     # optional nsys SQLite -> GOAL generator
 ├── pipeline/                 # thin drivers over solver/ and tools/LogGOPSim/
 │   ├── build_tools.sh
 │   ├── demo.py
 │   ├── run_composite_lp.py
-│   └── run_lgs.py
+│   ├── run_lgs.py
+│   ├── run_monolithic_lp.py
+│   ├── run_nccl_generator.py
+│   └── reproduce_fig5_from_nsys.sh
 ├── data/
 │   ├── traces/demo_allreduce_16r_1MiB.goal  # tiny GOAL for the pipeline demo
 │   ├── output/...                            # precomputed sensitivity CSVs
@@ -141,6 +166,18 @@ python3 pipeline/run_lgs.py \
     --goal llama3_3_n32/output.goal --L 1000
 ```
 
+To regenerate the smallest paper pipeline from raw nsys captures, install
+the optional generator dependencies and run Tier C:
+
+```bash
+pip install -r requirements-tierc.txt
+pipeline/reproduce_fig5_from_nsys.sh
+```
+
+This path downloads only the selected Fig. 5 workload. It intentionally
+does not download the full trace archive and does not run the 4,096-GPU
+cases.
+
 ## System requirements
 
 - Python 3.8+
@@ -149,6 +186,8 @@ python3 pipeline/run_lgs.py \
 - For the `--pipeline` path: `g++`, `gengetopt`, `re2c`
 - For Composite-LP / Monolithic-LP runs: Gurobi 10.0+
   (free academic license at `gurobi.com/academia`)
+- For raw nsys-to-GOAL regeneration: `requirements-tierc.txt` and
+  NVIDIA Nsight Systems (`nsys`)
 
 Tested on Ubuntu 22.04 (WSL2) with Python 3.8.10, Matplotlib 3.7,
 g++ 9.4, LogGOPSim 1.x (shipped source).
