@@ -145,3 +145,50 @@ safe on this local WSL machine and avoids expensive trace regeneration,
   `SC_Tracing/tools/nccl_generator/main.py`,
   `SC_Tracing/tools/LogGOPSim/LogGOPSim.cpp`,
   plus corresponding copies in `artifact_sc26`, `tools/nccl_generator_v2_hwfix`, and the publish/temp worktrees.
+
+## 2026-06-25 01:05-01:25 CEST - Grok Node-Scaling Local Comparison
+
+- Objective: compare available Grok hardware-log, LogGOPSim, Monolithic-LP, and Composite-LP iteration runtimes with Monolithic-LP attempted only up to what is safe locally and the other series plotted up to N128 where data exists.
+- Machine/environment: `Linux LAPTOP-CJL91217`, artifact repository `/home/tbonato/LLAMP_Test/SC_Tracing`, branch `clean_version_local`, starting commit `652bbf0`.
+- Command: `df -h /home/tbonato/LLAMP_Test && free -h`.
+  Result: local filesystem had about 6.3 GB free; memory was 19 GiB total, about 16 GiB available, plus 5.0 GiB swap.
+- Existing local Grok inputs found:
+  - Hardware logs for N4, N8, and N16 under `/home/tbonato/LLAMP_Test/workspaces/grok/N*/log-*.out`.
+  - Existing LGS result CSVs for N4 and N8 under `/home/tbonato/LLAMP_Test/output/grok_n4_full/lgs/` and `/home/tbonato/LLAMP_Test/output/grok_n8_full/lgs/`.
+  - Existing Monolithic-LP result CSVs for N4 and N8 under `/home/tbonato/LLAMP_Test/output/grok_n4/monolithic_100pct/` and `/home/tbonato/LLAMP_Test/output/grok_n8_full/monolithic/`.
+  - Existing Composite-LP result CSVs for N4, N8, N16, N32, N64, and N128 under `/home/tbonato/LLAMP_Test/output/grok_composition/N*/`.
+- Existing local Grok raw-trace state:
+  - N16 has 64 `.nsys-rep` files under `/home/tbonato/LLAMP_Test/workspaces/grok/N16/nsys_profile`, total size about 309 MB.
+  - N16 has NCCL metadata sidecars under `/home/tbonato/LLAMP_Test/workspaces/grok/N16/analysis`, total size about 23 MB.
+  - No full N16 `output.goal` or `comm_dep.csv` was found locally.
+- Guarded N16 feasibility check:
+  - Command exported one rank with bundled Nsight Systems from `/home/tbonato/LLAMP_Test/workspaces/grok/N16/nsys_profile/profile_21163_0_0.nsys-rep` to a temporary SQLite file.
+  - Result: succeeded in about 7.45 s, max RSS about 44 MB; the single-rank SQLite file was 272,961,536 bytes.
+  - Interpretation: expanding all 64 ranks would be roughly 17 GB of SQLite before GOAL generation, exceeding the local filesystem's 6.3 GB free space.
+  - Cleanup: the temporary one-rank export directory was deleted after the size check.
+- Monolithic-LP feasibility:
+  - Existing paper memory-scaling data estimates Grok N16 Monolithic-LP peak memory at about 22 GB.
+  - Local machine had about 16 GiB available RAM plus 5 GiB swap, so a full N16 Monolithic-LP run was not launched.
+- Added `scripts/grok_node_scaling_compare.py`.
+  - The script parses existing local result CSVs and hardware logs, writes provenance/status fields for missing points, and does not launch LGS or LP jobs.
+- Command: `python3 scripts/grok_node_scaling_compare.py`.
+  Result: succeeded and wrote ignored local outputs under `figures/grok_node_scaling/`:
+  - `grok_node_scaling_compare.csv`
+  - `grok_node_scaling_compare.md`
+  - `grok_node_scaling_compare.pdf`
+  - `grok_node_scaling_compare.png`
+- Generated comparison table:
+
+  | Config | Nodes | GPUs | HW [s] | LGS [s] | Monolithic LP [s] | Composite LP [s] |
+  |---|---:|---:|---:|---:|---:|---:|
+  | N4 | 4 | 16 | 5.015 | 6.125 | 6.061 | 6.101 |
+  | N8 | 8 | 32 | 4.116 | 5.086 | 4.988 | 4.125 |
+  | N16 | 16 | 64 | 8.352 |  |  | 8.106 |
+  | N32 | 32 | 128 |  |  |  | 7.242 |
+  | N64 | 64 | 256 |  |  |  | 7.278 |
+  | N128 | 128 | 512 |  |  |  | 7.121 |
+
+- Command: `python3 -m compileall -q scripts/grok_node_scaling_compare.py`.
+  Result: succeeded.
+- Command: `git diff --check`.
+  Result: clean.
