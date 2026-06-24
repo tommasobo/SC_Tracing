@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pipeline stage: SQLite (from nsys export) -> GOAL + comm_dep CSV.
+Pipeline stage: SQLite (from nsys export) -> GOAL + metadata sidecars.
 
 Thin wrapper around ``tools/nccl_generator/main.py`` that points the
 generator at the shipped Alps NPKit reference data. Typical invocation:
@@ -9,11 +9,12 @@ generator at the shipped Alps NPKit reference data. Typical invocation:
         --sqlite-dir workspaces/llama_n4/sqlite \\
         --out-dir    workspaces/llama_n4/analysis
 
-The input directory must contain one ``*.sqlite`` file per node (four
-for the Fig 5 workload). The output directory will end up with
-``output.goal``, ``collective_instances.csv``, ``comm_info.csv``,
-``comm_ring_info.csv``, and the ``comm_dep`` file that the LP solver
-needs.
+The input directory must contain one ``*.sqlite`` file per exported rank.
+The output directory will end up with ``output.goal``,
+``collective_instances.csv``, ``goal_label_ranges.csv``, ``comm_info.csv``,
+and related NCCL metadata CSVs. The LP ``comm_dep`` send/recv dependency
+file is produced separately by patched LogGOPSim via
+``pipeline/run_lgs.py --comm-dep-out``.
 """
 import argparse
 import subprocess

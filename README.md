@@ -204,6 +204,10 @@ requested:
 pipeline/reproduce_fig5_from_nsys.sh --run-lp
 ```
 
+With `--run-lp`, the script first asks the patched LogGOPSim binary to
+emit the `comm_dep.csv` send/recv dependency sidecar, then passes that
+file into the LP solver.
+
 This path downloads only the selected Fig. 5 workload. It intentionally
 does not download the full trace archive and does not run the 4,096-GPU
 cases.

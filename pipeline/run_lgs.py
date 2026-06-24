@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Optional
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -37,7 +38,14 @@ def ensure_built() -> None:
         raise SystemExit("failed to build LogGOPSim")
 
 
-def run_lgs(goal_path: Path, L: int, G: float, o: int, g: int = 5) -> int:
+def run_lgs(
+    goal_path: Path,
+    L: int,
+    G: float,
+    o: int,
+    g: int = 5,
+    comm_dep_out: Optional[Path] = None,
+) -> int:
     """Run LGS on a GOAL file and return runtime in ns."""
     ensure_built()
     with tempfile.TemporaryDirectory() as tmp:
@@ -54,6 +62,9 @@ def run_lgs(goal_path: Path, L: int, G: float, o: int, g: int = 5) -> int:
             "-o", str(o),
             "-g", str(g),
         ]
+        if comm_dep_out is not None:
+            comm_dep_out.parent.mkdir(parents=True, exist_ok=True)
+            cmd += ["--comm-dep-file", str(comm_dep_out)]
         r = subprocess.run(cmd, capture_output=True, text=True, check=True)
     m = FINISH_RE.search(r.stdout)
     if m:
@@ -75,6 +86,9 @@ def main() -> int:
                     help="Overhead, ns (default: 200)")
     ap.add_argument("--g", type=int, default=5,
                     help="Gap, ns (default: 5)")
+    ap.add_argument("--comm-dep-out", type=Path, default=None,
+                    help="Optional CSV path for patched LogGOPSim send/recv "
+                         "dependency output.")
     args = ap.parse_args()
 
     if not args.goal.exists():
@@ -82,7 +96,7 @@ def main() -> int:
         return 2
 
     t0 = time.perf_counter()
-    rt = run_lgs(args.goal, args.L, args.G, args.o, args.g)
+    rt = run_lgs(args.goal, args.L, args.G, args.o, args.g, args.comm_dep_out)
     dt = time.perf_counter() - t0
     print(f"[lgs] runtime = {rt} ns ({rt / 1e6:.3f} ms) "
           f"[L={args.L} G={args.G} o={args.o}, solved in {dt:.2f}s]")

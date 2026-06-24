@@ -4,10 +4,11 @@
 # Stages:
 #   1. Download 4 nsys-rep files for Llama 3.3 @ 16 GPUs from A2.
 #   2. nsys export --type=sqlite   (needs NVIDIA Nsight Systems)
-#   3. tools/nccl_generator        (SQLite -> output.goal + comm_dep)
-#   4. solver/main.py              (GOAL -> full_runtime.csv, Gurobi)
-#   5. scripts/fig05_llama_iteration.py  (CSV -> fig5_llama7b.pdf)
-#   6. Diff regenerated CSV and PDF against the shipped artifact output.
+#   3. tools/nccl_generator        (SQLite -> output.goal + metadata sidecars)
+#   4. patched LogGOPSim           (GOAL -> comm_dep.csv)
+#   5. solver/main.py              (GOAL + comm_dep -> full_runtime.csv, Gurobi)
+#   6. scripts/fig05_llama_iteration.py  (CSV -> fig5_llama7b.pdf)
+#   7. Diff regenerated CSV and PDF against the shipped artifact output.
 #
 # Requires: nsys >= 2024.x on PATH, Python 3.8+, wget. The LP step also
 # requires Gurobi and is disabled unless --run-lp is passed.
@@ -121,7 +122,8 @@ Steps:
   2. Export .nsys-rep files to sqlite with nsys.
   3. Run tools/nccl_generator through pipeline/run_nccl_generator.py.
   4. Stop unless --run-lp is set.
-  5. If --run-lp is set, run the expensive Gurobi monolithic LP sweep.
+  5. If --run-lp is set, emit comm_dep.csv via patched LogGOPSim and run
+     the expensive Gurobi monolithic LP sweep.
 EOF
 }
 
@@ -207,13 +209,20 @@ if [ "$RUN_LP" -eq 0 ]; then
     exit 0
 fi
 
-echo "=== [4/5] GOAL -> Monolithic-LP sweep (paper Fig 5 baseline, can take tens of minutes) ==="
+echo "=== [4/6] GOAL -> comm_dep.csv via patched LogGOPSim ==="
+python3 "$HERE/run_lgs.py" \
+    --goal "$WORK/analysis/output.goal" \
+    --L 1000 --G 0.04 --o 200 \
+    --comm-dep-out "$WORK/analysis/comm_dep.csv"
+
+echo "=== [5/6] GOAL + comm_dep -> Monolithic-LP sweep (paper Fig 5 baseline, can take tens of minutes) ==="
 python3 "$HERE/run_monolithic_lp.py" \
     --goal  "$WORK/analysis/output.goal" \
+    --comm-dep "$WORK/analysis/comm_dep.csv" \
     --out   "$WORK/out/full_runtime.csv" \
     --l-min 0 --l-max 1000000 --step 50000
 
-echo "=== [5/5] Compare regenerated vs shipped (Monolithic LP baseline) ==="
+echo "=== [6/6] Compare regenerated vs shipped (Monolithic LP baseline) ==="
 cp "$WORK/out/full_runtime.csv" \
    "$ROOT/data/output/llama7b/partial_100pct/sweeps/full_runtime.csv.regenerated"
 echo "  regenerated CSV saved to:"

@@ -19,6 +19,7 @@ figures/
 # Pipeline intermediate output
 data/demo_output/
 tier_c_fig5/
+tier_c_local_smoke/
 *.regenerated
 
 # Built LogGOPSim binaries
