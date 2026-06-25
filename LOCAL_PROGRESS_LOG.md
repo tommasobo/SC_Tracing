@@ -86,6 +86,7 @@ safe on this local WSL machine and avoids expensive trace regeneration,
   Result: succeeded.
 - Command: `git diff --check`.
   Result: clean.
+
 - Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --pipeline --only 3` after output-flush and demo-message changes.
   Result: succeeded; runtime 3.98 s after LogGOPSim was already built; max RSS 134764 KiB. Console output is now ordered correctly.
 
@@ -112,6 +113,7 @@ safe on this local WSL machine and avoids expensive trace regeneration,
   Result: succeeded, `5 passed`.
 - Command: `git diff --check`.
   Result: clean.
+
 - Command: `python3 reproduce_all.py --list`.
   Result: succeeded.
 - Command: `/usr/bin/time -f 'elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --pipeline --only 3`.
@@ -192,3 +194,34 @@ safe on this local WSL machine and avoids expensive trace regeneration,
   Result: succeeded.
 - Command: `git diff --check`.
   Result: clean.
+
+## 2026-06-25 01:35-01:45 CEST - Additional Local Reproducibility Sweep
+
+- Objective: run the broadest local-safe artifact checks after adding the Grok comparison helper, without expanding large Grok traces or launching expensive LP jobs.
+- Machine/environment: `Linux LAPTOP-CJL91217`, artifact repository `/home/tbonato/LLAMP_Test/SC_Tracing`, branch `clean_version_local`, starting commit `9258529`.
+- Command: `df -h /home/tbonato/LLAMP_Test && free -h`.
+  Result: local filesystem had about 6.3 GB free; memory was 19 GiB total, about 16 GiB available, plus 5.0 GiB swap.
+- Command: `/usr/bin/time -f 'list elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --list`.
+  Result: succeeded; listed packaged figure mappings for paper figures 1, 3, 4, 5, 6, 7, 8/9, and 10. Runtime 0.06 s; max RSS 11,784 KiB.
+- Command: `/usr/bin/time -f 'all_figures elapsed=%E maxrss_kb=%M' python3 reproduce_all.py`.
+  Result: succeeded; regenerated all packaged figure PDFs under ignored `figures/`. Runtime 32.96 s; max RSS 190,708 KiB.
+- Command: `/usr/bin/time -f 'pipeline_fig3 elapsed=%E maxrss_kb=%M' python3 reproduce_all.py --pipeline --only 3`.
+  Result: succeeded; replayed the shipped demo GOAL with LogGOPSim at `L=0,1000,10000,100000` and regenerated Fig. 3. Runtime 5.18 s; max RSS 134,868 KiB. Reported demo runtimes were 1.272 ms, 1.302 ms, 1.572 ms, and 4.272 ms.
+- Command: `/usr/bin/time -f 'artifact_check elapsed=%E maxrss_kb=%M' python3 scripts/check_artifact.py`.
+  Result: succeeded; checked help surfaces, Tier C dry-run, compile checks, and one packaged figure regeneration. Runtime 3.52 s; max RSS 82,468 KiB.
+- Command: `/usr/bin/time -f 'pytest elapsed=%E maxrss_kb=%M' python3 -m pytest -q`.
+  Result: succeeded; `5 passed`. Runtime 3.98 s; max RSS 82,700 KiB.
+- Command: `/usr/bin/time -f 'compileall elapsed=%E maxrss_kb=%M' python3 -m compileall -q pipeline scripts tools/nccl_generator solver/llamp_nccl tests reproduce_all.py`.
+  Result: succeeded. Runtime 0.14 s; max RSS 13,964 KiB.
+- Command: `bash -n pipeline/build_tools.sh pipeline/reproduce_fig5_from_nsys.sh solver/graph_gen.sh solver/lp_analysis.sh`.
+  Result: succeeded; shell syntax OK.
+- Command: `/usr/bin/time -f 'tierc_dryrun elapsed=%E maxrss_kb=%M' bash pipeline/reproduce_fig5_from_nsys.sh --dry-run`.
+  Result: succeeded without downloads or generated files. It reported `nsys` missing from `PATH` and all Python dependencies present. Runtime 0.35 s; max RSS 9,244 KiB.
+- Command: `/usr/bin/time -f 'grok_compare elapsed=%E maxrss_kb=%M' python3 scripts/grok_node_scaling_compare.py`.
+  Result: succeeded; regenerated ignored Grok comparison CSV/Markdown/PDF/PNG under `figures/grok_node_scaling/`. Runtime 2.08 s; max RSS 110,956 KiB.
+- Command: `rm -f /tmp/sc_tracing_demo_comm_dep.csv; /usr/bin/time -f 'lgs_comm_dep elapsed=%E maxrss_kb=%M' python3 pipeline/run_lgs.py --goal data/traces/demo_allreduce_16r_1MiB.goal --L 1000 --G 0.04 --o 200 --g 5 --comm-dep-out /tmp/sc_tracing_demo_comm_dep.csv; wc -l /tmp/sc_tracing_demo_comm_dep.csv`.
+  Result: succeeded; patched LogGOPSim reported runtime 1.302 ms and emitted a 480-line demo `comm_dep` CSV. Runtime 0.05 s; max RSS 12,456 KiB.
+- Command: `/usr/bin/time -f 'monolithic_dryrun elapsed=%E maxrss_kb=%M' python3 pipeline/run_monolithic_lp.py --goal data/traces/demo_allreduce_16r_1MiB.goal --out /tmp/sc_tracing_demo_full_runtime.csv --l-min 0 --l-max 0 --step 1000 --dry-run`.
+  Result: succeeded; printed the expected `solver/main.py -a sensitivity` command and did not launch Gurobi. Runtime 0.03 s; max RSS 11,744 KiB.
+- Command: `/usr/bin/time -f 'nccl_generator_dryrun elapsed=%E maxrss_kb=%M' python3 pipeline/run_nccl_generator.py --sqlite-dir /home/tbonato/LLAMP_Test/data/raw/mixed20_annotated/mixed20_atlahs_rerun_results_20260403_annotated_rerun/mixed20_rand16to64_2n_ch1_job1791879/trace/nsys_reports --out-dir /tmp/sc_tracing_nccl_generator_dryrun --dry-run`.
+  Result: succeeded; wrapper resolved the generator command, NPKit JSON inputs, and found 8 local SQLite rank files. Runtime 0.03 s; max RSS 11,740 KiB.
